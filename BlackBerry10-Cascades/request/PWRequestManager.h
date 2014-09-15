@@ -4,8 +4,6 @@
 //  (c) Pushwoosh 2014
 //
 
-#include "../dao/UserDAO.hpp"
-
 #include <QtCore/QObject>
 #include <QtNetwork/QNetworkReply>
 
