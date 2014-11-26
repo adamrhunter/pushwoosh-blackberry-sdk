@@ -14,6 +14,8 @@
 * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 * See the License for the specific language governing permissions and
 * limitations under the License.
+*
+* Derived from: https://github.com/blackberry/BB10-WebWorks-Samples/blob/master/pushCaptureBasics/pushClient/www/pushClient.js
 */
 
 var config = {
@@ -23,7 +25,8 @@ var config = {
 		ppgUrl : "http://cpXXXX.pushapi.eval.blackberry.com"
 	},
 	pushwooshAppId : "XXXXX-XXXXX",
-	invokeTargetIdOpen : "GENERATE.invoke.open"
+	invokeTargetIdOpen : "GENERATE.invoke.open",
+	enableMultiNotifications : true
 };
 
 var pushwoosh = {
@@ -53,13 +56,20 @@ var pushwoosh = {
         if (blackberry.app.windowState == "fullscreen")
 		{
 			pushwoosh.hasBeenInForeground = true;
+
+			pushwooshUtils.sendAppOpen(function(successMessage){
+				utils.log("Send app open success: " + JSON.stringify(successMessage))
+			}, function(jqXHR, errorMessage){
+				utils.log("Send app open failed: " + JSON.stringify(errorMessage))
+			});
+
 		}
 
         // We also use the resume event to help determine if the application has
         // ever been brought to the foreground (from the background - hence it's
         // being "resumed")
         blackberry.event.addEventListener("resume", pushwoosh.onResume);
-		//blackberry.event.addEventListener("pause", pushwoosh.onPause);
+		blackberry.event.addEventListener("pause", pushwoosh.onPause);
 	
 		/* Retrieve the last time (in milliseconds) of Push activity. */
 		pushwoosh.lastActivity = window.parseInt(window.localStorage.lastActivity || 0, 10);
@@ -71,12 +81,6 @@ var pushwoosh = {
             // Do nothing here since the db will be left uninitialized and the proper error will be
             // displayed when the user attempts to perform an operation that requires a db transaction
         }
-		
-		pushwooshUtils.sendAppOpen(function(successMessage){
-			utils.log("Send app open success: " + JSON.stringify(successMessage))
-		}, function(jqXHR, errorMessage){
-			utils.log("Send app open failed: " + JSON.stringify(errorMessage))
-		});
 		
 		if (pushwoosh.pushService === 0) {
 			/* We only need a new object if we don't already have one; i.e. once per launch. */
@@ -161,7 +165,7 @@ var pushwoosh = {
 						utils.log('Successfully created Push Channel.');
 						window.localStorage.lastActivity = new Date().getTime().toString();
 						
-						pushwooshUtils.register(pushwooshRegisterSuccessCallback, pushwooshRegisterFailedCallback);
+						pushwooshUtils.register(pushwoosh.pushwooshRegisterSuccessCallback, pushwoosh.pushwooshRegisterFailedCallback);
 					} else {
 						/* Channel failed to be created. */
 						utils.log('Failed to create Push Channel: ' + result);
@@ -241,7 +245,6 @@ var pushwoosh = {
 				utils.log(text);
 				
 				var pushObject = JSON.parse(text);
-				
 				pushwooshUtils.sendPushStat(pushObject.p, function(successMessage){
 					utils.log("Send push stat success: " + JSON.stringify(successMessage))
 				}, function(jqXHR, errorMessage){
@@ -295,9 +298,12 @@ var pushwoosh = {
 				/* Update our Push Activity to track this received push. */
 				utils.log('Push invocation received.');
 				window.localStorage.lastActivity = new Date().getTime();
-				
+
+				//should never happen as we register onInvoke after pushService has been created				
+				if(pushwoosh.pushService === 0)
+					return;
+
 				var pushPayload = pushwoosh.pushService.extractPushPayload(invokeRequest);
-				
 				pushHandler.handle(pushPayload);
 			} else if (invokeRequest.action === 'bb.action.OPEN') {
 				utils.log('Invocation received from open notification');
@@ -324,6 +330,13 @@ var pushwoosh = {
 					} else {
 						// The content is either plain text, HTML, or XML
 						var content = JSON.parse(pushHandler.b64_to_utf8(results.rows.item(0).content));
+
+						//sending stats
+						pushwooshUtils.sendPushStat(content.p, function(successMessage){
+							utils.log("Send push stat success: " + content.p + ", " + JSON.stringify(successMessage))
+						}, function(jqXHR, errorMessage){
+							utils.log("Send push stat failed: " + content.p + ", " + JSON.stringify(errorMessage))
+						})
 						
 						pushwoosh.pushwooshMessageCallback(content);
 					}
@@ -340,22 +353,7 @@ var pushwoosh = {
 var utils = {
 	/* Logs events to the screen and console. */
 	log: function (value) {
-		/*var div;
-
-		el = {
-			'clear': document.getElementById('clear'),
-			'content': document.getElementById('content'),
-			'register': document.getElementById('register'),
-			'unregister': document.getElementById('unregister')
-		};*/
-		
 		console.log(value);
-		/*value = '<span style="color: #111111;">[' + new Date().toTimeString().split(' ')[0] + ']</span> ' + value.toString();
-
-		div = document.createElement('div');
-		div.innerHTML = value;
-		el.content.appendChild(div);
-		el.content.scrollTop = el.content.scrollHeight;*/
 	}
 };
 
@@ -465,7 +463,24 @@ var pushwooshUtils = {
 		payload = (params) ? JSON.stringify(params) : '';
 		pushwooshUtils.helper(url, method, payload, lambda, lambdaerror);
 	},
+
+	sendPushDelivery : function(hashValue, lambda, lambdaerror) {
+		var method = 'POST';
+		var token = pushwooshUtils.getToken();
+		var url = 'messageDeliveryEvent';
 		
+		var params = {
+				request : {
+					application : config.pushwooshAppId,
+					hwid : blackberry.identity.uuid,
+					hash: hashValue
+				}
+			};
+
+		payload = (params) ? JSON.stringify(params) : '';
+		pushwooshUtils.helper(url, method, payload, lambda, lambdaerror);
+	},
+
 	setTags : function(tagsJsonObject, lambda, lambdaerror) {
 		var method = 'POST';
 		var token = pushwooshUtils.getToken();
@@ -641,7 +656,7 @@ var pushHandler = {
 	processPush: function(content, contentType) {
 		// Remove the push list from local storage since the push list
 		// is going to be updated with this new push we are processing
-		localStorage.removeItem(config.pushwooshAppId);
+		//localStorage.removeItem(config.pushwooshAppId);
 
 		var currentTime = new Date();
 
@@ -651,11 +666,8 @@ var pushHandler = {
 		// Get the push time (based on the current time)
 		var pushtime = pushHandler.getPushTime(currentTime);
 
-		// Remove notifications if multi notifications are disabled
-		//pushHandler.clearNotificationsIfAny(content, contentType, pushdate, pushtime);
-		
-		// Add the new pushed content to storage
-		pushHandler.storePush(content, contentType, pushdate, pushtime);
+		// Remove notifications if multi notifications are disabled. This will add the notification.
+		pushHandler.clearNotificationsIfAnyAddNew(content, contentType, pushdate, pushtime);
 	},
 
 	/**
@@ -881,7 +893,7 @@ var pushHandler = {
 	 * Remove all push notifications from hub and drop pushes table
 	 * if in config multi notifications are disabled
 	 */
-	/*clearNotificationsIfAny: function(content, contentType, pushdate, pushtime) {
+	clearNotificationsIfAnyAddNew: function(content, contentType, pushdate, pushtime) {
 		if (config.enableMultiNotifications) {
 			// Add the new pushed content to storage
 			pushHandler.storePush(content, contentType, pushdate, pushtime);
@@ -905,7 +917,7 @@ var pushHandler = {
                 }
             );
         });
-	},*/
+	},
 	
 	/**
 	 * Inserts the newly received push content into the database.
@@ -962,6 +974,26 @@ var pushHandler = {
 				var seqnum = results.insertId;
 				
 				var pushContent = JSON.parse(pushHandler.b64_to_utf8(content));
+
+				//sending stats
+				pushwooshUtils.sendPushDelivery(pushContent.p, function(successMessage){
+					utils.log("Send push delivery success: " + pushContent.p + ", " + JSON.stringify(successMessage))
+
+					// Exit the application after processing the push if the
+					// application has not been brought to the foreground
+					if (!pushwoosh.hasBeenInForeground) {
+						blackberry.app.exit();
+					}
+
+				}, function(jqXHR, errorMessage){
+					utils.log("Send push delivery failed: " + pushContent.p + ", " + JSON.stringify(errorMessage))
+
+					// Exit the application after processing the push if the
+					// application has not been brought to the foreground
+					if (!pushwoosh.hasBeenInForeground) {
+						blackberry.app.exit();
+					}
+				})
 				
 				if (!pushwoosh.hasBeenInForeground) {
 					// Add a notification to the BlackBerry Hub for this push
@@ -978,126 +1010,20 @@ var pushHandler = {
 					};
 					new Notification(title, options);
 				} else {
+					// sending stats
+					pushwooshUtils.sendPushStat(pushContent.p, function(successMessage){
+						utils.log("Send push stat success: " + pushContent.p + ", " + JSON.stringify(successMessage))
+					}, function(jqXHR, errorMessage){
+						utils.log("Send push stat failed: " + pushContent.p + ", " + JSON.stringify(errorMessage))
+					})
+
 					// Call message callback
 					pushwoosh.pushwooshMessageCallback(pushContent);
-				}
-
-				// Exit the application after processing the push if the
-				// application has not been brought to the foreground
-				if (!pushwoosh.hasBeenInForeground) {
-					//setTimeout(function() {
-						// Check again that the application has not been 
-						// brought to the foreground in the second before
-						// we exit
-					  //  if (!pushwoosh.hasBeenInForeground) {
-							blackberry.app.exit();
-					  //  }
-					//}, 1000);
 				}
 			});
 		});
 	},
 
-	/**
-	 * Adds a new push item (and possibly date heading) to the push list.
-	 * 
-	 * @param {String}
-	 *            content the content of the push as a base64 encoded string
-	 * @param {String}
-	 *            type the content type
-	 * @param {String}
-	 *            extension the file extension of the push content
-	 * @param {String}
-	 *            pushdate the date of the push
-	 * @param {String}
-	 *            pushtime the time of the push
-	 * @param {Number}
-	 *            seqnum the unique id identifying the push
-	 */
-	addPushItem: function(content, type, extension, pushdate, pushtime, seqnum) {
-		// Check if we are on the push list screen
-		// Otherwise, there is no need to add the push item to the list
-		// It will instead be handled when loading the pushes for the push list screen
-		if (document.getElementById("push-screen") != null) {
-			// Create a push row
-			var pushRow = document.createElement("tr");
-			pushRow.id = seqnum.toString(10);
-			pushRow.className = "unread-push";
-
-			// First column
-			var firstColumn = document.createElement("td");
-			firstColumn.setAttribute("onclick", "sample.pushcapture.openPush('" + pushRow.id + "');");
-			firstColumn.className = "column1";
-
-			var firstColumnImage = document.createElement("img");
-			firstColumnImage.src = sample.pushcapture.getIconForType(type);
-
-			firstColumn.appendChild(firstColumnImage);
-
-			// Second column
-			var secondColumn = document.createElement("td");
-			secondColumn.setAttribute("onclick", "sample.pushcapture.openPush('" + pushRow.id + "');");
-			secondColumn.className = "column2";
-
-			var secondColumnText = document.createTextNode(sample.pushcapture.getPushPreview(type, extension, content));
-
-			secondColumn.appendChild(secondColumnText);
-
-			// Third column
-			var thirdColumn = document.createElement("td");
-			thirdColumn.setAttribute("onclick", "sample.pushcapture.openPush('" + pushRow.id + "');");
-			thirdColumn.className = "column3";
-
-			var thirdColumnText = document.createTextNode(pushtime);
-
-			thirdColumn.appendChild(thirdColumnText);
-
-			// Fourth column
-			var fourthColumn = document.createElement("td");
-			fourthColumn.setAttribute("onclick", "sample.pushcapture.deletePush('" + pushRow.id + "');");
-			fourthColumn.className = "column4";
-
-			var fourthColumnImage = document.createElement("img");
-			fourthColumnImage.id = "img" + pushRow.id;
-			fourthColumnImage.src = "img/trash.png";
-
-			fourthColumn.appendChild(fourthColumnImage);
-
-			pushRow.appendChild(firstColumn);
-			pushRow.appendChild(secondColumn);
-			pushRow.appendChild(thirdColumn);
-			pushRow.appendChild(fourthColumn);
-
-			// Create a date row
-			var dateRow = document.createElement("tr");
-			var dateColumn = document.createElement("td");
-			dateColumn.colSpan = 4;
-			dateColumn.className = "heading";
-
-			var dateColumnText = document.createTextNode(pushdate);
-
-			dateColumn.appendChild(dateColumnText);
-			dateRow.appendChild(dateColumn);
-
-			if (document.getElementById("no-results").style.display == "block") {
-				// Hide the "no pushes" message
-				document.getElementById("no-results").style.display = "none";
-
-				document.getElementById("push-table").appendChild(dateRow);
-
-				document.getElementById("push-table").appendChild(pushRow);
-			} else if (document.getElementById("push-table").firstChild.firstChild.firstChild.nodeValue == pushdate) {
-				// Insert below the current date row (since the date matches)
-				document.getElementById("push-table").insertBefore(pushRow,
-						document.getElementById("push-table").firstChild.nextSibling);
-			} else {
-				// Insert a row for the date heading (since the date did not match) and the push
-				document.getElementById("push-table").insertBefore(pushRow, document.getElementById("push-table").firstChild);
-
-				document.getElementById("push-table").insertBefore(dateRow, document.getElementById("push-table").firstChild);
-			}
-		}
-	},
 
 	/**
 	 * Based on the "Content-Type" header of the received push, returns the corresponding file extension of the content.
@@ -1153,5 +1079,3 @@ var pushHandler = {
 		}
 	}
 }
-
-//pushwoosh.hasBeenInForeground = false;
