@@ -34,6 +34,9 @@ public:
     void registerForPushNotifications();
     void unregisterFromPushNotifications();
 
+    void setTags(const QVariantMap & tags, QObject * slotObject, const char * callbackSlot);
+    void getTags(const QVariantMap & tags, QObject * slotObject, const char * callbackSlot);
+
     void registerWithPushwoosh(const QString &token);
     void unregisterWithPushwoosh();
 

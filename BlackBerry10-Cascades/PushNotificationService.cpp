@@ -12,6 +12,8 @@
 #include "request/PWRegisterDeviceRequest.h"
 #include "request/PWUnregisterDeviceRequest.h"
 #include "request/PWPushStatRequest.h"
+#include "request/PWSetTagsRequest.h"
+#include "request/PWGetTagsRequest.h"
 
 using namespace bb::network;
 
@@ -104,6 +106,26 @@ void PushNotificationService::unregisterFromPushNotifications()
     }  else {
         emit noPushServiceConnection();
     }
+}
+
+void PushNotificationService::setTags(const QVariantMap & tags, QObject * slotObject, const char * callbackSlot)
+{
+    PWSetTagsRequest * tagsRequest = new PWSetTagsRequest(m_configuration.pushwooshAppId(), tags);
+
+    if(slotObject != 0 && callbackSlot != 0)
+        QObject::connect(tagsRequest, SIGNAL(requestFinished(PWRequest*)), slotObject, callbackSlot);
+
+    requestManager.sendRequest(tagsRequest);
+}
+
+void PushNotificationService::getTags(const QVariantMap & tags, QObject * slotObject, const char * callbackSlot)
+{
+    PWGetTagsRequest * tagsRequest = new PWGetTagsRequest(m_configuration.pushwooshAppId());
+
+    if(slotObject != 0 && callbackSlot != 0)
+        QObject::connect(tagsRequest, SIGNAL(requestFinished(PWRequest*)), slotObject, callbackSlot);
+
+    requestManager.sendRequest(tagsRequest);
 }
 
 void PushNotificationService::registerWithPushwoosh(const QString &token)
