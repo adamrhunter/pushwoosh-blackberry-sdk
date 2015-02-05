@@ -197,12 +197,25 @@ var pushwoosh = {
 		try {
 			/* Call the destroyChannel API to cease communication with Push services. */
 			utils.log('Destroying Push Channel.');
+
+			window.localStorage.lastActivity = 0;
+
+			pushwooshUtils.unregister(function(successMessage){
+				utils.log("Unregistered device");
+			}, function(jqXHR, errorMessage){
+				utils.log("Failed to unregistered device");
+			});
+
+			if(!pushwoosh.pushService) {
+				utils.log("No active push service");
+				return;
+			}
+
 			pushwoosh.pushService.destroyChannel(
 				function destroyChannelCallback(result) {
 					if (result === blackberry.push.PushService.SUCCESS) {
 						/* Channel was successfully destroyed, reset Push activity. */
 						utils.log('Successfully destroyed Push Channel.');
-						window.localStorage.lastActivity = 0;
 					} else {
 						/* Channel could not be destroyed. */
 						utils.log('Failed to destroy Push Channel: ' + result);
