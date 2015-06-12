@@ -524,14 +524,18 @@ var pushwooshUtils = {
 			success: function (msg, sts, jqXHR) {
 				var status_code = msg['status_code'];
 
-				if(status_code == 200) {
+				if(status_code == 200 && typeof(lambda) == "function") {
 					lambda(msg);
 				} else {
-					lambdaerror(msg);
+					if (typeof(lambdaerror) == "function") {
+						lambdaerror(msg);
+					}
 				}
 			},
 			error: function (jqXHR, sts, err) {
-				lambdaerror(jqXHR, err);
+				if (typeof(lambdaerror) == "function") {
+					lambdaerror(jqXHR, err);
+				}
 			}
 		});
 	}
